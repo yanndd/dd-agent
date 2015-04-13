@@ -13,7 +13,7 @@ This document aims to provide some basic guidelines to contribute to this reposi
 
 ## Pull Requests
 
-You wrote some code/add a new check and want to share it? Thanks a lot for your interest!
+You wrote some code/added a new check and want to share it? Thanks a lot for your interest!
 
 In order to ease/speed our review, here are some items you can check/improve when submitting your PR:
 
@@ -41,7 +41,7 @@ An **example** of something which breaks bisectability:
 * commit 2: _forgot column_
 * commit 3: _fix typo_
 
-To avoid that, please rebase your changes and create valid commits. It keeps history cleaner and it's easier to revert things and it makes developers happier too.
+To avoid that, please rebase your changes and create valid commits. It keeps history cleaner, it's easier to revert things, and it makes developers happier too.
 
 
 ### Messages
@@ -61,7 +61,7 @@ Examples, see:
 
 ### Commits titles
 
-Every commit title, PR or issue should be name like the following example:
+Every commit title, PR or issue should be named like the following example:
 ```
 [category] short description of the matter
 ```
@@ -73,7 +73,7 @@ Every commit title, PR or issue should be name like the following example:
 * _dev_: related to development or tooling
 * _check_name_: specific to one check
 
-For descriptions, keep it short keep it meaningful. Here are few example to illustrate.
+For descriptions, keep it short keep it meaningful. Here are a few examples to illustrate.
 
 #### Bad descriptions
 
@@ -145,7 +145,7 @@ And it's over! Don't forget to submit your two PRs (and to cross-reference them)
 
 ### Python module with external dependency
 
-Your python module needs also an external lib? That's not a problem with Omnibus, it just needs a little more work.
+Your python module also needs an external lib? That's not a problem with Omnibus, it just needs a little more work.
 
 #### omnibus-software
 
@@ -155,7 +155,7 @@ Let's keep it simple, and suppose that you want to add a python module `my_modul
 
 Create a `my_lib.rb` file in `config/software/`.
 
-Then add instructions to compile it from source and install it in the right (this is the for instance the `libsqlite3.rb`):
+Then add instructions to compile it from source and install it at the right place (this is for instance `libsqlite3.rb`):
 ```ruby
 name "my_lib"
 default_version "9.9.9"
@@ -180,7 +180,7 @@ build do
 end
 ```
 
-_You will probably have to adapt the build instructions, dependending on your lib._
+_You will probably have to adapt the build instructions, depending on your lib._
 
 Then create the `my_module.rb` file and copy/paste these instructions:
 ```ruby
@@ -197,9 +197,9 @@ build do
 end
 ```
 
-And replace, `my_module` with your module name, `default_version` by the version you want, then provide a URL to the module license (replacing `"https://url.to.my/LICENSE.txt"`).
+And replace, `my_module` with your module name, `default_version` with the version you want, `my_lib` with the name of the required lib, then provide a URL to the module license (replacing `"https://url.to.my/LICENSE.txt"`).
 
-If you need to install it with `python setup.py install`, take a look at this [example](https://github.com/DataDog/omnibus-software/blob/macos-clean/config/software/guidata.rb). (which shows also the use of a patch)
+If you need to install it with `python setup.py install`, take a look at this [example](https://github.com/DataDog/omnibus-software/blob/macos-clean/config/software/guidata.rb). (which also demonstrate the use of a patch).
 
 And it's done for `omnibus-software`!
 
