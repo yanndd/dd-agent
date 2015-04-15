@@ -1,0 +1,11 @@
+[Unit]
+Description="Datadog Agent"
+
+[Service]
+Type=forking
+PIDFile=/var/run/datadog-supervisord.pid
+Environment="PATH=/opt/datadog-agent/embedded/bin:/opt/datadog-agent/bin:$PATH"
+ExecStart=/opt/datadog-agent/bin/supervisord -c /etc/dd-agent/supervisor.conf --pidfile /var/run/datadog-supervisord.pid
+
+[Install]
+WantedBy=multi-user.target
