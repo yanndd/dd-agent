@@ -36,7 +36,7 @@ namespace :ci do
 
       sh %(#{supervisor_rootdir}/bin/supervisord\
            -c $VOLATILE_DIR/supervisor/supervisord.conf)
-      sleep_for 3
+      WaitURL.wait_for_result(9001, 5)
     end
 
     task :script => ['ci:common:script'] do

@@ -36,7 +36,8 @@ namespace :ci do
 
     task :before_script => ['ci:common:before_script'] do
       sh %(cd $VOLATILE_DIR && #{etcd_rootdir}/etcd >/dev/null &)
-      sleep_for 10
+      # Waiting for etcd to start
+      WaitURL.wait_for_result(4001, 5)
     end
 
     task :script => ['ci:common:script'] do

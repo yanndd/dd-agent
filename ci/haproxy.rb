@@ -46,7 +46,8 @@ namespace :ci do
         Process.detach(pid)
         sh %(echo #{pid} > $VOLATILE_DIR/#{name}.pid)
       end
-      sleep_for 2
+      # Waiting for haproxy to start
+      WaitURL.wait_for_result(3836, 5)
     end
 
     task :script => ['ci:common:script'] do

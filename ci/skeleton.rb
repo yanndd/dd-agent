@@ -7,6 +7,7 @@ namespace :ci do
     task :install => ['ci:common:install']
 
     task :before_script => ['ci:common:before_script']
+    # If you need to wait on a start, please use WaitURL.wait_for_result(port, max_timeout)
 
     task :script => ['ci:common:script'] do
       this_provides = [

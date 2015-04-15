@@ -29,7 +29,8 @@ namespace :ci do
       pid = spawn %(#{es_rootdir}/bin/elasticsearch)
       Process.detach(pid)
       sh %(echo #{pid} > $VOLATILE_DIR/elasticsearch.pid)
-      sleep_for 10
+      # Waiting for elaticsearch to start
+      WaitURL.wait_for_result(9200, 5)
     end
 
     task :script => ['ci:common:script'] do

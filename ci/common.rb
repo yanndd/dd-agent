@@ -1,5 +1,7 @@
 require 'colorize'
+require 'socket'
 require 'time'
+require 'timeout'
 
 require './ci/resources/cache'
 
@@ -15,17 +17,51 @@ def section(name)
   puts ''
 end
 
+class WaitURL
+  def self.check_port(port)
+    puts "Try #{port}"
+    begin
+      Timeout::timeout(0.5) do
+        begin
+          s = TCPSocket.new('localhost', port)
+          s.close
+          return true
+        rescue Errno::ECONNREFUSED, Errno::EHOSTUNREACH
+          return false
+        end
+      end
+    rescue Timeout::Error
+      return false
+    end
+  end
+
+  def self.wait_for_result(port, max_timeout)
+    start_time = Time.now
+    status = false
+    puts "Trying localhost:#{port}"
+    loop do
+      status = check_port(port)
+      break if status || Time.now > start_time + max_timeout
+      sleep 0.25
+    end
+    if status
+      puts 'Found!'
+    else
+      raise "Still not up after #{max_timeout}s"
+    end
+    status
+  end
+end
+
 # Initialize cache if in travis and in our repository
 # (no cache for external contributors)
 if ENV['TRAVIS'] && ENV['AWS_SECRET_ACCESS_KEY']
-  cache = Cache.new({
-    debug: ENV['DEBUG_CACHE'],
-    s3: {
-      bucket: 'dd-agent-travis-cache',
-      access_key_id: ENV['AWS_ACCESS_KEY_ID'],
-      secret_access_key: ENV['AWS_SECRET_ACCESS_KEY']
-    }
-  })
+  cache = Cache.new(debug: ENV['DEBUG_CACHE'],
+                    s3: {
+                      bucket: 'dd-agent-travis-cache',
+                      access_key_id: ENV['AWS_ACCESS_KEY_ID'],
+                      secret_access_key: ENV['AWS_SECRET_ACCESS_KEY']
+                    })
 end
 
 namespace :ci do
@@ -72,7 +108,7 @@ namespace :ci do
       t.reenable
     end
 
-    task :cache do |t|
+    task :cache do |_t|
       section('CACHE')
       cache.push
     end
@@ -97,6 +133,6 @@ namespace :ci do
       t.reenable
     end
 
-    task :execute => [:before_install, :install, :before_script, :script]
+    task execute: [:before_install, :install, :before_script, :script]
   end
 end
