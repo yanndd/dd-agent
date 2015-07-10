@@ -1,7 +1,7 @@
 require './ci/common'
 
 def riak_version
-  ENV['COUCHDB_VERSION']  || '2.0.5'
+  ENV['COUCHDB_VERSION'] || '2.0.5'
 end
 
 def riak_rootdir
@@ -10,15 +10,16 @@ end
 
 namespace :ci do
   namespace :riak do |flavor|
-    task :before_install => ['ci:common:before_install']
+    task before_install: ['ci:common:before_install']
 
-    task :install => ['ci:common:install'] do
+    task install: ['ci:common:install'] do
       unless Dir.exist? File.expand_path(riak_rootdir)
         sh %(curl -o $VOLATILE_DIR/kerl https://raw.githubusercontent.com/spawngrid/kerl/master/kerl)
         sh %(chmod a+x $VOLATILE_DIR/kerl)
         sh %($VOLATILE_DIR/kerl build git git://github.com/basho/otp.git OTP_R16B02 R16B02)
         sh %($VOLATILE_DIR/kerl install R16B02 $VOLATILE_DIR/erlang/R16B02)
-        sh %(curl -o $VOLATILE_DIR/riak.tar.gz http://s3.amazonaws.com/downloads.basho.com/riak/#{riak_version[0..2]}/#{riak_version}/riak-#{riak_version}.tar.gz)
+        sh %(curl -o $VOLATILE_DIR/riak.tar.gz\
+             http://s3.amazonaws.com/downloads.basho.com/riak/#{riak_version[0..2]}/#{riak_version}/riak-#{riak_version}.tar.gz)
         sh %(mkdir -p $VOLATILE_DIR/riak)
         sh %(tar zxvf $VOLATILE_DIR/riak.tar.gz  -C $VOLATILE_DIR/riak --strip-components=1)
         sh %(cd $VOLATILE_DIR/riak\
@@ -28,7 +29,7 @@ namespace :ci do
       end
     end
 
-    task :before_script => ['ci:common:before_script'] do
+    task before_script: ['ci:common:before_script'] do
       %w(dev1 dev2).each do |dev|
         sh %(#{riak_rootdir}/#{dev}/bin/riak start)
       end
@@ -44,20 +45,20 @@ namespace :ci do
       end
     end
 
-    task :script => ['ci:common:script'] do
+    task script: ['ci:common:script'] do
       this_provides = [
         'riak'
       ]
       Rake::Task['ci:common:run_tests'].invoke(this_provides)
     end
 
-    task :before_cache => ['ci:common:before_cache'] do
+    task before_cache: ['ci:common:before_cache'] do
       Rake::Task['ci:riak:cleanup'].invoke
     end
 
-    task :cache => ['ci:common:cache']
+    task cache: ['ci:common:cache']
 
-    task :cleanup => ['ci:common:cleanup'] do
+    task cleanup: ['ci:common:cleanup'] do
       %w(dev1 dev2).each do |dev|
         sh %(#{riak_rootdir}/#{dev}/bin/riak stop)
         sh %(rm -rf #{riak_rootdir}/#{dev}/data)
@@ -66,14 +67,13 @@ namespace :ci do
 
     task :execute do
       exception = nil
-      # Compilation takes too long on Travis, so it's using the cache
-      # External contributors don't have access to the cache
-      # So they can't run these tests
-      if ENV['TRAVIS'] && ENV['AWS_SECRET_ACCESS_KEY'].nil?
+      # Compilation takes too long on Travis
+      if ENV['TRAVIS']
         puts "Riak tests won't run, compilation takes too long on Travis"
       else
         begin
-          %w(before_install install before_script script).each do |t|
+          %w(before_install install before_script
+             script before_cache cache).each do |t|
             Rake::Task["#{flavor.scope.path}:#{t}"].invoke
           end
         rescue => e
@@ -85,11 +85,6 @@ namespace :ci do
         else
           puts 'Cleaning up'
           Rake::Task["#{flavor.scope.path}:cleanup"].invoke
-        end
-        if ENV['TRAVIS']
-          %w(before_cache cache).each do |t|
-            Rake::Task["#{flavor.scope.path}:#{t}"].invoke
-          end
         end
         fail exception if exception
       end

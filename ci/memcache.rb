@@ -11,9 +11,9 @@ end
 
 namespace :ci do
   namespace :memcache do |flavor|
-    task :before_install => ['ci:common:before_install']
+    task before_install: ['ci:common:before_install']
 
-    task :install => ['ci:common:install'] do
+    task install: ['ci:common:install'] do
       unless Dir.exist? File.expand_path(memcache_rootdir)
         # Downloads
         # http://memcached.org/files/memcached-#{memcache_version}.tar.gz
@@ -27,28 +27,29 @@ namespace :ci do
       end
     end
 
-    task :before_script => ['ci:common:before_script'] do
+    task before_script: ['ci:common:before_script'] do
       sh %(#{memcache_rootdir}/memcached -d)
     end
 
-    task :script => ['ci:common:script'] do
+    task script: ['ci:common:script'] do
       this_provides = [
         'memcache'
       ]
       Rake::Task['ci:common:run_tests'].invoke(this_provides)
     end
 
-    task :cleanup => ['ci:common:cleanup']
+    task cleanup: ['ci:common:cleanup']
     # FIXME: stop memcache
 
-    task :before_cache => ['ci:common:before_cache']
+    task before_cache: ['ci:common:before_cache']
 
-    task :cache => ['ci:common:cache']
+    task cache: ['ci:common:cache']
 
     task :execute do
       exception = nil
       begin
-        %w(before_install install before_script script).each do |t|
+        %w(before_install install before_script
+           script before_cache cache).each do |t|
           Rake::Task["#{flavor.scope.path}:#{t}"].invoke
         end
       rescue => e
@@ -60,11 +61,6 @@ namespace :ci do
       else
         puts 'Cleaning up'
         Rake::Task["#{flavor.scope.path}:cleanup"].invoke
-      end
-      if ENV['TRAVIS'] && ENV['AWS_SECRET_ACCESS_KEY']
-        %w(before_cache cache).each do |t|
-          Rake::Task["#{flavor.scope.path}:#{t}"].invoke
-        end
       end
       fail exception if exception
     end

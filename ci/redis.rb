@@ -10,9 +10,9 @@ end
 
 namespace :ci do
   namespace :redis do |flavor|
-    task :before_install => ['ci:common:before_install']
+    task before_install: ['ci:common:before_install']
 
-    task :install => ['ci:common:install'] do
+    task install: ['ci:common:install'] do
       # Downloads
       # https://github.com/antirez/redis/archive/#{redis_version}.zip
       unless Dir.exist? File.expand_path(redis_rootdir)
@@ -27,7 +27,7 @@ namespace :ci do
       end
     end
 
-    task :before_script => ['ci:common:before_script'] do
+    task before_script: ['ci:common:before_script'] do
       # Run redis !
       sh %(#{redis_rootdir}/src/redis-server\
            $TRAVIS_BUILD_DIR/ci/resources/redis/auth.conf)
@@ -39,23 +39,24 @@ namespace :ci do
            $TRAVIS_BUILD_DIR/ci/resources/redis/slave_unhealthy.conf)
     end
 
-    task :script => ['ci:common:script'] do
+    task script: ['ci:common:script'] do
       this_provides = [
         'redis'
       ]
       Rake::Task['ci:common:run_tests'].invoke(this_provides)
     end
 
-    task :before_cache => ['ci:common:before_cache']
+    task before_cache: ['ci:common:before_cache']
 
-    task :cache => ['ci:common:cache']
+    task cache: ['ci:common:cache']
 
-    task :cleanup => ['ci:common:cleanup'] do
+    task cleanup: ['ci:common:cleanup'] do
       # Shutdown redis
       conf_files = ["#{ENV['TRAVIS_BUILD_DIR']}/ci/resources/redis/auth.conf",
                     "#{ENV['TRAVIS_BUILD_DIR']}/ci/resources/redis/noauth.conf"]
-      for f in conf_files do
-        pass, port = nil, nil
+      conf_files.each do |f|
+        pass = nil
+        port = nil
         File.readlines(f).each do |line|
           param = line.split(' ')
           if param[0] == 'port'
@@ -64,7 +65,7 @@ namespace :ci do
             pass = param[1]
           end
         end
-        if pass and port
+        if pass && port
           sh %(#{redis_rootdir}/src/redis-cli -p #{port} -a #{pass} SHUTDOWN)
         elsif port
           sh %(#{redis_rootdir}/src/redis-cli -p #{port} SHUTDOWN)
@@ -75,7 +76,8 @@ namespace :ci do
     task :execute do
       exception = nil
       begin
-        %w(before_install install before_script script).each do |t|
+        %w(before_install install before_script
+           script before_cache cache).each do |t|
           Rake::Task["#{flavor.scope.path}:#{t}"].invoke
         end
       rescue => e
@@ -87,11 +89,6 @@ namespace :ci do
       else
         puts 'Cleaning up'
         Rake::Task["#{flavor.scope.path}:cleanup"].invoke
-      end
-      if ENV['TRAVIS'] && ENV['AWS_SECRET_ACCESS_KEY']
-        %w(before_cache cache).each do |t|
-          Rake::Task["#{flavor.scope.path}:#{t}"].invoke
-        end
       end
       fail exception if exception
     end

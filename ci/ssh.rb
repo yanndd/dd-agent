@@ -2,29 +2,30 @@ require './ci/common'
 
 namespace :ci do
   namespace :ssh do |flavor|
-    task :before_install => ['ci:common:before_install']
+    task before_install: ['ci:common:before_install']
 
-    task :install => ['ci:common:install']
+    task install: ['ci:common:install']
 
-    task :before_script => ['ci:common:before_script']
+    task before_script: ['ci:common:before_script']
 
-    task :script => ['ci:common:script'] do
+    task script: ['ci:common:script'] do
       this_provides = [
         'ssh'
       ]
       Rake::Task['ci:common:run_tests'].invoke(this_provides)
     end
 
-    task :before_cache => ['ci:common:before_cache']
+    task before_cache: ['ci:common:before_cache']
 
-    task :cache => ['ci:common:cache']
+    task cache: ['ci:common:cache']
 
-    task :cleanup => ['ci:common:cleanup']
+    task cleanup: ['ci:common:cleanup']
 
     task :execute do
       exception = nil
       begin
-        %w(before_install install before_script script).each do |t|
+        %w(before_install install before_script
+           script before_cache cache).each do |t|
           Rake::Task["#{flavor.scope.path}:#{t}"].invoke
         end
       rescue => e
@@ -36,11 +37,6 @@ namespace :ci do
       else
         puts 'Cleaning up'
         Rake::Task["#{flavor.scope.path}:cleanup"].invoke
-      end
-      if ENV['TRAVIS'] && ENV['AWS_SECRET_ACCESS_KEY']
-        %w(before_cache cache).each do |t|
-          Rake::Task["#{flavor.scope.path}:#{t}"].invoke
-        end
       end
       fail exception if exception
     end

@@ -10,9 +10,9 @@ end
 
 namespace :ci do
   namespace :varnish do |flavor|
-    task :before_install => ['ci:common:before_install']
+    task before_install: ['ci:common:before_install']
 
-    task :install => ['ci:common:install'] do
+    task install: ['ci:common:install'] do
       unless Dir.exist? File.expand_path(varnish_rootdir)
         sh %(curl -s -L\
              -o $VOLATILE_DIR/varnish-#{varnish_version}.tar.gz\
@@ -30,27 +30,32 @@ namespace :ci do
       end
     end
 
-    task :before_script => ['ci:common:before_script'] do
+    task before_script: ['ci:common:before_script'] do
       sh %(#{varnish_rootdir}/sbin/varnishd -b 127.0.0.1:4242 -a 127.0.0.1:4000 -P $VOLATILE_DIR/varnish.pid)
       # We need this for our varnishadm/varnishstat bins
       ENV['PATH'] = "#{varnish_rootdir}/bin:#{ENV['PATH']}"
     end
 
-    task :script => ['ci:common:script'] do
+    task script: ['ci:common:script'] do
       this_provides = [
         'varnish'
       ]
       Rake::Task['ci:common:run_tests'].invoke(this_provides)
     end
 
-    task :cleanup => ['ci:common:cleanup'] do
+    task before_cache: ['ci:common:before_cache']
+
+    task cache: ['ci:common:cache']
+
+    task cleanup: ['ci:common:cleanup'] do
       sh %(kill `cat $VOLATILE_DIR/varnish.pid`)
     end
 
     task :execute do
       exception = nil
       begin
-        %w(before_install install before_script script).each do |t|
+        %w(before_install install before_script
+           script before_cache cache).each do |t|
           Rake::Task["#{flavor.scope.path}:#{t}"].invoke
         end
       rescue => e

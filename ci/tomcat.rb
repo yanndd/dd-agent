@@ -1,6 +1,6 @@
 require './ci/common'
 
-# FIXME test against different versions of tomcat
+# FIXME: test against different versions of tomcat
 # and JDKs
 
 def tomcat_rootdir
@@ -9,9 +9,9 @@ end
 
 namespace :ci do
   namespace :tomcat do |flavor|
-    task :before_install => ['ci:common:before_install']
+    task before_install: ['ci:common:before_install']
 
-    task :install => ['ci:common:install'] do
+    task install: ['ci:common:install'] do
       # Downloads
       # http://mirror.sdunix.com/apache/tomcat/tomcat-6/v6.0.43/bin/apache-tomcat-6.0.43.tar.gz
       unless Dir.exist? File.expand_path(tomcat_rootdir)
@@ -24,39 +24,40 @@ namespace :ci do
       end
     end
 
-    task :before_script => ['ci:common:before_script'] do
+    task before_script: ['ci:common:before_script'] do
       sh %(cp $TRAVIS_BUILD_DIR/ci/resources/tomcat/setenv.sh #{tomcat_rootdir}/bin/)
       sh %(cp $TRAVIS_BUILD_DIR/ci/resources/tomcat/server.xml #{tomcat_rootdir}/conf/server.xml)
       sh %(mkdir -p $VOLATILE_DIR/jmx_yaml)
       sh %(cp $TRAVIS_BUILD_DIR/ci/resources/tomcat/tomcat.yaml $VOLATILE_DIR/jmx_yaml/)
       sh %(cp $TRAVIS_BUILD_DIR/ci/resources/tomcat/jmx.yaml $VOLATILE_DIR/jmx_yaml/)
       sh %(#{tomcat_rootdir}/bin/startup.sh)
-      sleep_for 5
+      Wait.for 'http://localhost:8080'
     end
 
-    task :script => ['ci:common:script'] do
+    task script: ['ci:common:script'] do
       this_provides = [
         'tomcat'
       ]
       Rake::Task['ci:common:run_tests'].invoke(this_provides)
     end
 
-    task :before_cache => ['ci:common:before_cache'] do
+    task before_cache: ['ci:common:before_cache'] do
       # Regenerated at every run
       sh %(rm -f #{tomcat_rootdir}/bin/setenv.sh)
       sh %(rm -f #{tomcat_rootdir}/conf/server.xml)
     end
 
-    task :cache => ['ci:common:cache']
+    task cache: ['ci:common:cache']
 
-    task :cleanup => ['ci:common:cleanup'] do
+    task cleanup: ['ci:common:cleanup'] do
       sh %(#{tomcat_rootdir}/bin/shutdown.sh)
     end
 
     task :execute do
       exception = nil
       begin
-        %w(before_install install before_script script).each do |t|
+        %w(before_install install before_script
+           script before_cache cache).each do |t|
           Rake::Task["#{flavor.scope.path}:#{t}"].invoke
         end
       rescue => e
@@ -68,11 +69,6 @@ namespace :ci do
       else
         puts 'Cleaning up'
         Rake::Task["#{flavor.scope.path}:cleanup"].invoke
-      end
-      if ENV['TRAVIS'] && ENV['AWS_SECRET_ACCESS_KEY']
-        %w(before_cache cache).each do |t|
-          Rake::Task["#{flavor.scope.path}:#{t}"].invoke
-        end
       end
       fail exception if exception
     end

@@ -1,40 +1,42 @@
 # stdlib
+from collections import deque
 import logging
-import modules
 import multiprocessing
 from optparse import Values
-import servicemanager
 import sys
-import threading
 import time
-import tornado.httpclient
+
+# 3p
+import servicemanager
 from win32.common import handle_exe_click
 import win32event
-import win32evtlogutil
 import win32service
 import win32serviceutil
 
-# DD
+# project
 from checks.collector import Collector
 from config import (
-    get_config,
     get_confd_path,
+    get_config,
     get_system_stats,
-    get_win32service_file,
     load_check_directory,
-    set_win32_cert_path,
     PathNotFound,
+    set_win32_cert_path,
 )
-import dogstatsd
 from ddagent import Application
+import dogstatsd
 from emitter import http_emitter
 from jmxfetch import JMXFetch
-from util import get_hostname, get_os
+import modules
+from util import get_hostname
+from utils.jmx import JMXFiles
+from utils.profile import AgentProfiler
 
 log = logging.getLogger(__name__)
 
 SERVICE_SLEEP_INTERVAL = 1
-MAX_FAILED_HEARTBEATS = 8 # runs of collector
+MAX_FAILED_HEARTBEATS = 8  # runs of collector
+DEFAULT_COLLECTOR_PROFILE_INTERVAL = 20
 
 class AgentSvc(win32serviceutil.ServiceFramework):
     _svc_name_ = "DatadogAgent"
@@ -50,9 +52,9 @@ class AgentSvc(win32serviceutil.ServiceFramework):
         opts, args = Values({
             'autorestart': False,
             'dd_url': None,
-            'clean': False,
             'use_forwarder': True,
-            'disabled_dd': False
+            'disabled_dd': False,
+            'profile': False
         }), []
         agentConfig = get_config(parse_args=False, options=opts)
         self.hostname = get_hostname(agentConfig)
@@ -63,14 +65,18 @@ class AgentSvc(win32serviceutil.ServiceFramework):
         self._max_failed_heartbeats = \
             MAX_FAILED_HEARTBEATS * agentConfig['check_freq'] / SERVICE_SLEEP_INTERVAL
 
+        # Watch JMXFetch restarts
+        self._MAX_JMXFETCH_RESTARTS = 3
+        self._count_jmxfetch_restarts = 0
+
         # Keep a list of running processes so we can start/end as needed.
         # Processes will start started in order and stopped in reverse order.
         self.procs = {
-            'forwarder': DDForwarder(config, self.hostname),
-            'collector': DDAgent(agentConfig, self.hostname,
-                                 heartbeat=self._collector_send_heartbeat),
-            'dogstatsd': DogstatsdProcess(config, self.hostname),
-            'jmxfetch': JMXFetchProcess(config, self.hostname),
+            'forwarder': ProcessWatchDog("forwarder", DDForwarder(config, self.hostname)),
+            'collector': ProcessWatchDog("collector", DDAgent(agentConfig, self.hostname,
+                                         heartbeat=self._collector_send_heartbeat)),
+            'dogstatsd': ProcessWatchDog("dogstatsd", DogstatsdProcess(config, self.hostname)),
+            'jmxfetch': ProcessWatchDog("jmxfetch", JMXFetchProcess(config, self.hostname), 3),
         }
 
     def SvcStop(self):
@@ -99,9 +105,9 @@ class AgentSvc(win32serviceutil.ServiceFramework):
         while self.running:
             # Restart any processes that might have died.
             for name, proc in self.procs.iteritems():
-                if not proc.is_alive() and proc.is_enabled:
-                    servicemanager.LogInfoMsg("%s has died. Restarting..." % proc.name)
-                    self._restart_proc(name)
+                if not proc.is_alive() and proc.is_enabled():
+                    servicemanager.LogInfoMsg("%s has died. Restarting..." % name)
+                    proc.restart()
 
             self._check_collector_blocked()
 
@@ -117,25 +123,66 @@ class AgentSvc(win32serviceutil.ServiceFramework):
             if self._collector_failed_heartbeats > self._max_failed_heartbeats:
                 servicemanager.LogInfoMsg(
                     "%s was unresponsive for too long. Restarting..." % 'collector')
-                self._restart_proc('collector')
+                self.procs['collector'].restart()
                 self._collector_failed_heartbeats = 0
 
-    def _restart_proc(self, proc_name):
+
+class ProcessWatchDog(object):
+    """
+    Monitor the attached process.
+    Restarts when it exits until the limit set is reached.
+    """
+    DEFAULT_MAX_RESTARTS = 5
+    _RESTART_TIMEFRAME = 3600
+
+    def __init__(self, name, process, max_restarts=None):
+        """
+        :param max_restarts: maximum number of restarts per _RESTART_TIMEFRAME timeframe.
+        """
+        self._name = name
+        self._process = process
+        self._restarts = deque([])
+        self._max_restarts = max_restarts or self.DEFAULT_MAX_RESTARTS
+
+    def start(self):
+        return self._process.start()
+
+    def terminate(self):
+        return self._process.terminate()
+
+    def is_alive(self):
+        return self._process.is_alive()
+
+    def is_enabled(self):
+        return self._process.is_enabled
+
+    def _can_restart(self):
+        now = time.time()
+        while(self._restarts and self._restarts[0] < now - self._RESTART_TIMEFRAME):
+            self._restarts.popleft()
+
+        return len(self._restarts) < self._max_restarts
+
+    def restart(self):
+        if not self._can_restart():
+            servicemanager.LogInfoMsg(
+                "{0} reached the limit of restarts ({1} tries during the last {2}s"
+                " (max authorized: {3})). Not restarting..."
+                .format(self._name, len(self._restarts),
+                        self._RESTART_TIMEFRAME, self._max_restarts)
+            )
+            self._process.is_enabled = False
+            return
+
+        self._restarts.append(time.time())
         # Make a new proc instances because multiprocessing
         # won't let you call .start() twice on the same instance.
-        old_proc = self.procs[proc_name]
-        if proc_name == 'collector':
-            new_proc = old_proc.__class__(
-                old_proc.config, self.hostname, heartbeat=self._collector_send_heartbeat)
-        else:
-            new_proc = old_proc.__class__(old_proc.config, self.hostname)
+        if self._process.is_alive():
+            self._process.terminate()
 
-        if old_proc.is_alive():
-            old_proc.terminate()
-        del self.procs[proc_name]
+        self._process = self._process.__class__(self._process.config, self._process.hostname)
+        self._process.start()
 
-        new_proc.start()
-        self.procs[proc_name] = new_proc
 
 class DDAgent(multiprocessing.Process):
     def __init__(self, agentConfig, hostname, heartbeat=None):
@@ -148,11 +195,20 @@ class DDAgent(multiprocessing.Process):
         self.is_enabled = True
 
     def run(self):
-        from config import initialize_logging; initialize_logging('windows_collector')
+        from config import initialize_logging
+        initialize_logging('windows_collector')
         log.debug("Windows Service - Starting collector")
         emitters = self.get_emitters()
         systemStats = get_system_stats()
         self.collector = Collector(self.config, emitters, systemStats, self.hostname)
+
+        in_developer_mode = self.config.get('developer_mode')
+
+        # In developer mode, the number of runs to be included in a single collector profile
+        collector_profile_interval = self.config.get('collector_profile_interval',
+                                                     DEFAULT_COLLECTOR_PROFILE_INTERVAL)
+        profiled = False
+        collector_profiled_runs = 0
 
         # Load the checks.d checks
         checksd = load_check_directory(self.config, self.hostname)
@@ -161,14 +217,33 @@ class DDAgent(multiprocessing.Process):
         while self.running:
             if self._heartbeat:
                 self._heartbeat.send(0)
+
+            if in_developer_mode and not profiled:
+                try:
+                    profiler = AgentProfiler()
+                    profiler.enable_profiling()
+                    profiled = True
+                except Exception as e:
+                    log.warn("Cannot enable profiler: %s" % str(e))
+
             self.collector.run(checksd=checksd)
+
+            if profiled:
+                if collector_profiled_runs >= collector_profile_interval:
+                    try:
+                        profiler.disable_profiling()
+                        profiled = False
+                        collector_profiled_runs = 0
+                    except Exception as e:
+                        log.warn("Cannot disable profiler: %s" % str(e))
+                else:
+                    collector_profiled_runs += 1
+
             time.sleep(self.config['check_freq'])
 
     def stop(self):
         log.debug("Windows Service - Stopping collector")
         self.collector.stop()
-        if JMXFetch.is_running():
-            JMXFetch.stop()
         self.running = False
 
     def get_emitters(self):
@@ -191,7 +266,8 @@ class DDForwarder(multiprocessing.Process):
         self.hostname = hostname
 
     def run(self):
-        from config import initialize_logging; initialize_logging('windows_forwarder')
+        from config import initialize_logging
+        initialize_logging('windows_forwarder')
         log.debug("Windows Service - Starting forwarder")
         set_win32_cert_path()
         port = self.config.get('listen_port', 17123)
@@ -219,7 +295,8 @@ class DogstatsdProcess(multiprocessing.Process):
         self.hostname = hostname
 
     def run(self):
-        from config import initialize_logging; initialize_logging('windows_dogstatsd')
+        from config import initialize_logging
+        initialize_logging('windows_dogstatsd')
         if self.is_enabled:
             log.debug("Windows Service - Starting Dogstatsd server")
             self.reporter, self.server, _ = dogstatsd.init(use_forwarder=True)
@@ -240,25 +317,28 @@ class JMXFetchProcess(multiprocessing.Process):
     def __init__(self, agentConfig, hostname):
         multiprocessing.Process.__init__(self, name='jmxfetch')
         self.config = agentConfig
-        self.is_enabled = True
         self.hostname = hostname
 
-        osname = get_os()
         try:
-            confd_path = get_confd_path(osname)
-        except PathNotFound, e:
-            log.error("No conf.d folder found at '%s' or in the directory where"
-                      "the Agent is currently deployed.\n" % e.args[0])
+            confd_path = get_confd_path()
+            self.jmx_daemon = JMXFetch(confd_path, agentConfig)
+            self.jmx_daemon.configure()
+            self.is_enabled = self.jmx_daemon.should_run()
 
-        self.jmx_daemon = JMXFetch(confd_path, agentConfig)
+        except PathNotFound:
+            self.is_enabled = False
 
     def run(self):
-        log.debug("Windows Service - Starting JMXFetch")
-        self.jmx_daemon.run()
+        if self.is_enabled:
+            JMXFiles.clean_exit_file()
+            self.jmx_daemon.run()
 
-    def stop(self):
-        log.debug("Windows Service - Stopping JMXFetch")
-        self.jmx_daemon.terminate()
+    def terminate(self):
+        """
+        Override `terminate` method to properly exit JMXFetch.
+        """
+        JMXFiles.write_exit_file()
+        self.join()
 
 
 if __name__ == '__main__':

@@ -7,7 +7,7 @@ end
 
 namespace :ci do
   namespace :pgbouncer do |flavor|
-    task :before_install => ['ci:common:before_install']
+    task before_install: ['ci:common:before_install']
 
     task :install do
       Rake::Task['ci:postgres:install'].invoke
@@ -34,12 +34,13 @@ namespace :ci do
       sh %(cp $TRAVIS_BUILD_DIR/ci/resources/pgbouncer/users.txt\
            #{pgb_rootdir}/users.txt)
       sh %(#{pgb_rootdir}/pgbouncer -d #{pgb_rootdir}/pgbouncer.ini)
-      sleep_for 3
+      # Wait for pgbouncer to start
+      Wait.for 15_433
       sh %(PGPASSWORD=datadog #{pg_rootdir}/bin/psql\
            -h localhost -p 15433 -U datadog -w\
            -c "SELECT * FROM persons"\
            datadog_test)
-      sleep_for 3
+      sleep_for 5
     end
 
     task :script do
@@ -49,9 +50,9 @@ namespace :ci do
       Rake::Task['ci:common:run_tests'].invoke(this_provides)
     end
 
-    task :before_cache => ['ci:common:before_cache']
+    task before_cache: ['ci:common:before_cache']
 
-    task :cache => ['ci:common:cache']
+    task cache: ['ci:common:cache']
 
     task :cleanup do
       sh %(killall pgbouncer)
@@ -62,7 +63,8 @@ namespace :ci do
     task :execute do
       exception = nil
       begin
-        %w(before_install install before_script script).each do |t|
+        %w(before_install install before_script
+           script before_cache cache).each do |t|
           Rake::Task["#{flavor.scope.path}:#{t}"].invoke
         end
       rescue => e
@@ -75,13 +77,7 @@ namespace :ci do
         puts 'Cleaning up'
         Rake::Task["#{flavor.scope.path}:cleanup"].invoke
       end
-      if ENV['TRAVIS'] && ENV['AWS_SECRET_ACCESS_KEY']
-        %w(before_cache cache).each do |t|
-          Rake::Task["#{flavor.scope.path}:#{t}"].invoke
-        end
-      end
       fail exception if exception
     end
-
   end
 end

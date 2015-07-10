@@ -1,18 +1,18 @@
 # stdlib
 from datetime import datetime
 import os.path
+import re
 import socket
 import ssl
 import time
-import re
 from urlparse import urlparse
 
 # 3rd party
-import tornado
 import requests
+import tornado
 
 # project
-from checks.network_checks import NetworkCheck, Status, EventType
+from checks.network_checks import EventType, NetworkCheck, Status
 from config import _is_affirmative
 from util import headers as agent_headers
 
@@ -35,8 +35,8 @@ def get_ca_certs_path():
 
 class HTTPCheck(NetworkCheck):
     SOURCE_TYPE_NAME = 'system'
-    SC_STATUS = 'http_check'
-    SC_SSL_CERT = 'http_check.ssl_cert'
+    SC_STATUS = 'http.can_connect'
+    SC_SSL_CERT = 'http.ssl_cert'
 
     def __init__(self, name, init_config, agentConfig, instances):
         self.ca_certs = init_config.get('ca_certs', get_ca_certs_path())
@@ -47,7 +47,7 @@ class HTTPCheck(NetworkCheck):
         tags = instance.get('tags', [])
         username = instance.get('username')
         password = instance.get('password')
-        http_response_status_code = instance.get('http_response_status_code', "(1|2|3)\d\d")
+        http_response_status_code = str(instance.get('http_response_status_code', "(1|2|3)\d\d"))
         timeout = int(instance.get('timeout', 10))
         config_headers = instance.get('headers', {})
         headers = agent_headers(self.agentConfig)
@@ -250,9 +250,10 @@ class HTTPCheck(NetworkCheck):
 
     def report_as_service_check(self, sc_name, status, instance, msg=None):
         instance_name = instance['name']
-        service_check_name = self.normalize(instance_name, sc_name)
         url = instance.get('url', None)
-        sc_tags = ['url:%s' % url]
+        sc_tags = ['url:{0}'.format(url), "instance:{0}".format(instance_name)]
+        custom_tags = instance.get('tags', [])
+        tags = sc_tags + custom_tags
 
         if sc_name == self.SC_STATUS:
             # format the HTTP response body into the event
@@ -266,9 +267,9 @@ class HTTPCheck(NetworkCheck):
                 msg = "%d %s\n\n%s" % (code, reason, content)
                 msg = msg.rstrip()
 
-        self.service_check(service_check_name,
+        self.service_check(sc_name,
                            NetworkCheck.STATUS_TO_SERVICE_CHECK[status],
-                           tags=sc_tags,
+                           tags=tags,
                            message=msg
                            )
 

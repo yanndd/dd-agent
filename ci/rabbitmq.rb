@@ -11,9 +11,9 @@ end
 
 namespace :ci do
   namespace :rabbitmq do |flavor|
-    task :before_install => ['ci:common:before_install']
+    task before_install: ['ci:common:before_install']
 
-    task :install => ['ci:common:install'] do
+    task install: ['ci:common:install'] do
       # Downloads
       # http://www.rabbitmq.com/releases/rabbitmq-server/v#{mongo_version}/rabbitmq-server-generic-unix-#{mongo_version}.tar.gz
       unless Dir.exist? File.expand_path(rabbitmq_rootdir)
@@ -26,9 +26,9 @@ namespace :ci do
       end
     end
 
-    task :before_script => ['ci:common:before_script'] do
+    task before_script: ['ci:common:before_script'] do
       sh %(#{rabbitmq_rootdir}/sbin/rabbitmq-server -detached)
-      sleep_for 5
+      Wait.for 5672, 10
       sh %(#{rabbitmq_rootdir}/sbin/rabbitmq-plugins enable rabbitmq_management)
       sh %(#{rabbitmq_rootdir}/sbin/rabbitmq-plugins enable rabbitmq_management)
       %w(test1 test5 tralala).each do |q|
@@ -38,28 +38,29 @@ namespace :ci do
       sh %(python `find #{rabbitmq_rootdir} -name rabbitmqadmin` list queues)
     end
 
-    task :script => ['ci:common:script'] do
+    task script: ['ci:common:script'] do
       this_provides = [
         'rabbitmq'
       ]
       Rake::Task['ci:common:run_tests'].invoke(this_provides)
     end
 
-    task :before_cache => ['ci:common:before_cache'] do
+    task before_cache: ['ci:common:before_cache'] do
       # Delete the RabbitMQ RABBITMQ_MNESIA_DIR which contains the data
       sh %(rm -rf #{rabbitmq_rootdir}/var/lib/rabbitmq/mnesia)
     end
 
-    task :cache => ['ci:common:cache']
+    task cache: ['ci:common:cache']
 
-    task :cleanup => ['ci:common:cleanup'] do
+    task cleanup: ['ci:common:cleanup'] do
       sh %(#{rabbitmq_rootdir}/sbin/rabbitmqctl stop)
     end
 
     task :execute do
       exception = nil
       begin
-        %w(before_install install before_script script).each do |t|
+        %w(before_install install before_script
+           script before_cache cache).each do |t|
           Rake::Task["#{flavor.scope.path}:#{t}"].invoke
         end
       rescue => e
@@ -71,11 +72,6 @@ namespace :ci do
       else
         puts 'Cleaning up'
         Rake::Task["#{flavor.scope.path}:cleanup"].invoke
-      end
-      if ENV['TRAVIS'] && ENV['AWS_SECRET_ACCESS_KEY']
-        %w(before_cache cache).each do |t|
-          Rake::Task["#{flavor.scope.path}:#{t}"].invoke
-        end
       end
       fail exception if exception
     end

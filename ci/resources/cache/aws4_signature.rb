@@ -20,7 +20,6 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-
 # Original file:
 # https://github.com/travis-ci/travis-build/blob/d1c3be0b6aec5989872f9c534185585108125d0d/lib/travis/build/script/shared/directory_cache/s3/aws4_signature.rb
 
@@ -110,7 +109,7 @@ class Cache
     end
 
     def recursive_hmac(*args)
-      args.reduce { |key, data| OpenSSL::HMAC.digest('sha256', key, data) }
+      args.reduce { |k, d| OpenSSL::HMAC.digest('sha256', k, d) }
     end
   end
 end

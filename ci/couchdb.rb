@@ -1,7 +1,7 @@
 require './ci/common'
 
 def couchdb_version
-  ENV['FLAVOR_VERSION']  || '1.6.1'
+  ENV['FLAVOR_VERSION'] || '1.6.1'
 end
 
 def couchdb_rootdir
@@ -10,10 +10,10 @@ end
 
 namespace :ci do
   namespace :couchdb do |flavor|
-    task :before_install => ['ci:common:before_install']
+    task before_install: ['ci:common:before_install']
 
-    task :install => ['ci:common:install'] do
-      unless Dir.exist? File.expand_path(couchdb_rootdir)
+    task install: ['ci:common:install'] do
+      if !Dir.exist? File.expand_path(couchdb_rootdir)
         # Downloads
         # http://www.erlang.org/download/otp_src_17.4.tar.gz
         # http://mirrors.gigenet.com/apache/couchdb/source/#{couchdb_version}/apache-couchdb-#{couchdb_version}.tar.gz
@@ -71,28 +71,28 @@ namespace :ci do
       end
     end
 
-    task :before_script => ['ci:common:before_script'] do
+    task before_script: ['ci:common:before_script'] do
       sh %(#{couchdb_rootdir}/bin/couchdb -b)
       # Couch takes some time to start
-      sleep_for 2
+      Wait.for 5984
     end
 
-    task :script => ['ci:common:script'] do
+    task script: ['ci:common:script'] do
       this_provides = [
         'couchdb'
       ]
       Rake::Task['ci:common:run_tests'].invoke(this_provides)
     end
 
-    task :before_cache => ['ci:common:before_cache'] do
+    task before_cache: ['ci:common:before_cache'] do
       # It's the pid file which changes eveytime,
       # so let's actually cleanup before cache
       Rake::Task['ci:couchdb:cleanup'].invoke
     end
 
-    task :cache => ['ci:common:cache']
+    task cache: ['ci:common:cache']
 
-    task :cleanup => ['ci:common:cleanup'] do
+    task cleanup: ['ci:common:cleanup'] do
       sh %(#{couchdb_rootdir}/bin/couchdb -k)
       sh %(rm -f #{couchdb_rootdir}/var/run/couchdb/couchdb.pid)
     end
@@ -100,7 +100,8 @@ namespace :ci do
     task :execute do
       exception = nil
       begin
-        %w(before_install install before_script script).each do |t|
+        %w(before_install install before_script
+           script before_cache cache).each do |t|
           Rake::Task["#{flavor.scope.path}:#{t}"].invoke
         end
       rescue => e
@@ -112,11 +113,6 @@ namespace :ci do
       else
         puts 'Cleaning up'
         Rake::Task["#{flavor.scope.path}:cleanup"].invoke
-      end
-      if ENV['TRAVIS'] && ENV['AWS_SECRET_ACCESS_KEY']
-        %w(before_cache cache).each do |t|
-          Rake::Task["#{flavor.scope.path}:#{t}"].invoke
-        end
       end
       fail exception if exception
     end

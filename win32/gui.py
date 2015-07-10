@@ -5,53 +5,68 @@
 # Licensed under the terms of the CECILL License
 # Modified for Datadog
 
-import sys
+# stdlib
+import logging
 import os
 import os.path as osp
-import webbrowser
-import thread # To manage the windows process asynchronously
-import logging
-import pickle
 import platform
-import win32serviceutil
-import win32service
+import sys
+import thread  # To manage the windows process asynchronously
 
+# 3p
 # GUI Imports
-from guidata.qt.QtGui import (QWidget, QVBoxLayout, QSplitter, QFont,
-                              QListWidget, QPushButton, QLabel, QGroupBox,
-                              QHBoxLayout, QMessageBox, QInputDialog,
-                              QSystemTrayIcon, QIcon, QMenu, QTextEdit, QTextDocument)
-from guidata.qt.QtCore import SIGNAL, Qt, QSize, QPoint, QTimer
-
-from guidata.configtools import get_icon, get_family, MONOSPACE
+from guidata.configtools import get_family, get_icon, MONOSPACE
+from guidata.qt.QtCore import QPoint, QSize, Qt, QTimer, SIGNAL
+from guidata.qt.QtGui import (QFont, QGroupBox, QHBoxLayout, QInputDialog,
+                              QLabel, QListWidget, QMenu, QMessageBox,
+                              QPushButton, QSplitter, QSystemTrayIcon,
+                              QTextEdit, QVBoxLayout, QWidget)
 from guidata.qthelpers import get_std_icon
-from spyderlib.widgets.sourcecode.codeeditor import CodeEditor
 
 # small hack to avoid having to patch the spyderlib library
 # Needed because of py2exe bundling not being able to access
 # the spyderlib image sources
 import spyderlib.baseconfig
 spyderlib.baseconfig.IMG_PATH = [""]
+from spyderlib.widgets.sourcecode.codeeditor import CodeEditor
+
+# Windows management & others
+import tornado.template as template
+import win32service
+import win32serviceutil
+import yaml
 
 # Datadog
-from util import get_os, yLoader
-from config import (get_confd_path, get_config_path, get_config,
-    _windows_commondata_path, get_version)
-from checks.check_status import DogstatsdStatus, ForwarderStatus, CollectorStatus, logger_info
-
-# 3rd Party
-import yaml
-import tornado.template as template
-
+from checks.check_status import CollectorStatus, DogstatsdStatus, ForwarderStatus, logger_info
+from config import (
+    _windows_commondata_path,
+    get_confd_path,
+    get_config,
+    get_config_path,
+    get_version,
+)
+from util import yLoader
 
 log = logging.getLogger(__name__)
 
 EXCLUDED_WINDOWS_CHECKS = [
-    'btrfs', 'cacti', 'directory', 'docker', 'gearmand',
-    'hdfs', 'kafka_consumer', 'marathon', 'mcache',
-    'mesos', 'network', 'postfix', 'process',
-    'gunicorn', 'zk', 'ssh_check'
-    ]
+    'btrfs',
+    'cacti',
+    'directory',
+    'docker',
+    'gearmand',
+    'gunicorn',
+    'hdfs',
+    'kafka_consumer',
+    'marathon',
+    'mcache',
+    'mesos',
+    'network',
+    'postfix',
+    'process',
+    'ssh_check',
+    'zk',
+]
 
 MAIN_WINDOW_TITLE = "Datadog Agent Manager"
 
@@ -87,7 +102,7 @@ SYSTEM_TRAY_MENU = [
 
 def get_checks():
     checks = {}
-    conf_d_directory = get_confd_path(get_os())
+    conf_d_directory = get_confd_path()
 
     for filename in sorted(os.listdir(conf_d_directory)):
         module_name, ext = osp.splitext(filename)
@@ -98,7 +113,7 @@ def get_checks():
 
         agent_check = AgentCheck(filename, ext, conf_d_directory)
         if (agent_check.enabled or agent_check.module_name not in checks or
-            (not agent_check.is_example and not checks[agent_check.module_name].enabled)):
+           (not agent_check.is_example and not checks[agent_check.module_name].enabled)):
             checks[agent_check.module_name] = agent_check
 
     checks_list = checks.values()
@@ -331,7 +346,7 @@ class HTMLWindow(QTextEdit):
                 dogstatsd=dogstatsd_status.to_dict(),
                 forwarder=forwarder_status.to_dict(),
                 collector=collector_status.to_dict(),
-                )
+            )
             return generated_template
         except Exception:
             return ("Unable to fetch latest status")
@@ -569,17 +584,17 @@ def get_service_status():
         return "Unknown"
 
 def is_service_running(status = None):
-    if status == None:
+    if status is None:
         status = get_service_status()
     return status == win32service.SERVICE_RUNNING
 
 def is_service_pending(status = None):
-    if status == None:
+    if status is None:
         status = get_service_status()
     return status in [win32service.SERVICE_STOP_PENDING, win32service.SERVICE_START_PENDING]
 
 def is_service_stopped(status = None):
-    if status == None:
+    if status is None:
         status = get_service_status()
     return status == win32service.SERVICE_STOPPED
 

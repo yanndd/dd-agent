@@ -11,9 +11,9 @@ end
 
 namespace :ci do
   namespace :cassandra do |flavor|
-    task :before_install => ['ci:common:before_install']
+    task before_install: ['ci:common:before_install']
 
-    task :install => ['ci:common:install'] do
+    task install: ['ci:common:install'] do
       unless Dir.exist? File.expand_path(cass_rootdir)
         # Downloads
         # http://cassandra.apache.org/download/
@@ -26,25 +26,25 @@ namespace :ci do
       end
     end
 
-    task :before_script => ['ci:common:before_script'] do
+    task before_script: ['ci:common:before_script'] do
       sh %(cp $TRAVIS_BUILD_DIR/ci/resources/cassandra/cassandra_#{cass_version.split('.')[0..1].join('.')}.yaml #{cass_rootdir}/conf/cassandra.yaml)
-      sh %(#{cass_rootdir}/bin/cassandra -p $VOLATILE_DIR/cass.pid)
+      sh %(#{cass_rootdir}/bin/cassandra -p $VOLATILE_DIR/cass.pid > /dev/null)
       # Create temp cassandra workdir
       sh %(mkdir -p $VOLATILE_DIR/cassandra)
       # Wait for cassandra to init
-      sleep_for 10
+      Wait.for 7000, 10
     end
 
-    task :script => ['ci:common:script'] do
+    task script: ['ci:common:script'] do
       this_provides = [
         'cassandra'
       ]
       Rake::Task['ci:common:run_tests'].invoke(this_provides)
     end
 
-    task :before_cache => :cleanup
+    task before_cache: :cleanup
 
-    task :cache => ['ci:common:cache']
+    task cache: ['ci:common:cache']
 
     task cleanup: ['ci:common:cleanup'] do
       sh %(kill `cat $VOLATILE_DIR/cass.pid`)
@@ -55,7 +55,8 @@ namespace :ci do
     task :execute do
       exception = nil
       begin
-        %w(before_install install before_script script).each do |t|
+        %w(before_install install before_script
+           script before_cache cache).each do |t|
           Rake::Task["#{flavor.scope.path}:#{t}"].invoke
         end
       rescue => e
@@ -67,11 +68,6 @@ namespace :ci do
       else
         puts 'Cleaning up'
         Rake::Task["#{flavor.scope.path}:cleanup"].invoke
-      end
-      if ENV['TRAVIS'] && ENV['AWS_SECRET_ACCESS_KEY']
-        %w(before_cache cache).each do |t|
-          Rake::Task["#{flavor.scope.path}:#{t}"].invoke
-        end
       end
       fail exception if exception
     end

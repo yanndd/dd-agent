@@ -3,13 +3,13 @@ from collections import defaultdict
 import re
 import time
 
+# 3rd party
+import requests
+
 # project
 from checks import AgentCheck
 from config import _is_affirmative
 from util import headers
-
-# 3rd party
-import requests
 
 STATS_URL = "/;csv;norefresh"
 EVENT_TYPE = SOURCE_TYPE_NAME = 'haproxy'
@@ -52,13 +52,17 @@ class HAProxy(AgentCheck):
         "eresp": ("rate", "errors.resp_rate"),
         "wretr": ("rate", "warnings.retr_rate"),
         "wredis": ("rate", "warnings.redis_rate"),
-        "req_rate": ("gauge", "requests.rate"),
-        "hrsp_1xx": ("rate", "response.1xx"),
-        "hrsp_2xx": ("rate", "response.2xx"),
-        "hrsp_3xx": ("rate", "response.3xx"),
-        "hrsp_4xx": ("rate", "response.4xx"),
-        "hrsp_5xx": ("rate", "response.5xx"),
-        "hrsp_other": ("rate", "response.other"),
+        "req_rate": ("gauge", "requests.rate"), # HA Proxy 1.4 and higher
+        "hrsp_1xx": ("rate", "response.1xx"),  # HA Proxy 1.4 and higher
+        "hrsp_2xx": ("rate", "response.2xx"), # HA Proxy 1.4 and higher
+        "hrsp_3xx": ("rate", "response.3xx"), # HA Proxy 1.4 and higher
+        "hrsp_4xx": ("rate", "response.4xx"), # HA Proxy 1.4 and higher
+        "hrsp_5xx": ("rate", "response.5xx"), # HA Proxy 1.4 and higher
+        "hrsp_other": ("rate", "response.other"), # HA Proxy 1.4 and higher
+        "qtime": ("gauge", "queue.time"),  # HA Proxy 1.5 and higher
+        "ctime": ("gauge", "connect.time"),  # HA Proxy 1.5 and higher
+        "rtime": ("gauge", "response.time"),  # HA Proxy 1.5 and higher
+        "ttime": ("gauge", "session.time"),  # HA Proxy 1.5 and higher
     }
 
     SERVICE_CHECK_NAME = 'haproxy.backend_up'
@@ -386,8 +390,8 @@ class HAProxy(AgentCheck):
 
         if status in Services.STATUSES_TO_SERVICE_CHECK:
             service_check_tags = ["service:%s" % service_name]
+            hostname = data['svname']
             if data['back_or_front'] == Services.BACKEND:
-                hostname = data['svname']
                 service_check_tags.append('backend:%s' % hostname)
 
             status = Services.STATUSES_TO_SERVICE_CHECK[status]

@@ -10,9 +10,9 @@ end
 
 namespace :ci do
   namespace :apache do |flavor|
-    task :before_install => ['ci:common:before_install']
+    task before_install: ['ci:common:before_install']
 
-    task :install => ['ci:common:install'] do
+    task install: ['ci:common:install'] do
       unless Dir.exist? File.expand_path(apache_rootdir)
         # Downloads:
         # http://httpd.apache.org/download.cgi#apache24
@@ -43,7 +43,7 @@ namespace :ci do
       end
     end
 
-    task :before_script => ['ci:common:before_script'] do
+    task before_script: ['ci:common:before_script'] do
       sh %(cp $TRAVIS_BUILD_DIR/ci/resources/apache/httpd.conf\
               #{apache_rootdir}/conf/httpd.conf)
       sh %(sed -i -e 's@%APACHE_ROOTDIR%@#{apache_rootdir}@'\
@@ -51,7 +51,8 @@ namespace :ci do
       sh %(sed -i -e "s@%VOLATILE_DIR%@$VOLATILE_DIR@"\
             #{apache_rootdir}/conf/httpd.conf)
       sh %(#{apache_rootdir}/bin/apachectl start)
-      sleep_for 2
+      # Wait for Apache to start
+      Wait.for 'http://localhost:8080', 15
       # Simulate activity to populate metrics
       100.times do
         sh %(curl --silent http://localhost:8080 > /dev/null)
@@ -59,28 +60,29 @@ namespace :ci do
       sleep_for 2
     end
 
-    task :script => ['ci:common:script'] do
+    task script: ['ci:common:script'] do
       this_provides = [
         'apache'
       ]
       Rake::Task['ci:common:run_tests'].invoke(this_provides)
     end
 
-    task :before_cache => ['ci:common:before_cache'] do
+    task before_cache: ['ci:common:before_cache'] do
       # Useless to cache the conf, as it is regenerated every time
       sh %(rm -f #{apache_rootdir}/conf/httpd.conf)
     end
 
-    task :cache => ['ci:common:cache']
+    task cache: ['ci:common:cache']
 
-    task :cleanup => ['ci:common:cleanup'] do
+    task cleanup: ['ci:common:cleanup'] do
       sh %(#{apache_rootdir}/bin/apachectl stop)
     end
 
     task :execute do
       exception = nil
       begin
-        %w(before_install install before_script script).each do |t|
+        %w(before_install install before_script
+           script before_cache cache).each do |t|
           Rake::Task["#{flavor.scope.path}:#{t}"].invoke
         end
       rescue => e
@@ -92,11 +94,6 @@ namespace :ci do
       else
         puts 'Cleaning up'
         Rake::Task["#{flavor.scope.path}:cleanup"].invoke
-      end
-      if ENV['TRAVIS'] && ENV['AWS_SECRET_ACCESS_KEY']
-        %w(before_cache cache).each do |t|
-          Rake::Task["#{flavor.scope.path}:#{t}"].invoke
-        end
       end
       fail exception if exception
     end
